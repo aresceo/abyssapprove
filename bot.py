@@ -56,7 +56,7 @@ async def avvia(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         link_invito_chat: ChatInviteLink = await context.bot.create_chat_invite_link(chat_id=id_canale, member_limit=1)
         aggiungi_richiesta_in_attesa(id_utente, link_invito_chat.invite_link)
-        await update.message.reply_text("Sei stato aggiunto alla lista di attesa. Un amministratore approverà o rifiuterà la tua richiesta. 🕒")
+        await update.message.reply_text("Sei stato aggiunto alla lista di attesa. Un amministratore approverà o rifiuterà la tua richiesta. 🕒 (dev @stabbato)")
         id_amministratori = ["7782888722", "7839114402"]
         for id_amministratore in id_amministratori:
             await context.bot.send_message(
