@@ -130,7 +130,7 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(f"🎉 Utente {user_id} approvato e link inviato! 📨")
 
         # Notifica gli amministratori (inclusi te)
-        admin_ids = ["7782888722", "7839114402", "7768881599"]  # Aggiungi gli ID degli amministratori
+        admin_ids = ["7782888722", "7839114402",]  # Aggiungi gli ID degli amministratori
         for admin_id in admin_ids:
             await context.bot.send_message(
                 admin_id,
@@ -194,7 +194,7 @@ async def approve_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             await update.message.reply_text(f"🎉 Utente {user_id} approvato e link inviato! 📨")
 
             # Notifica gli amministratori
-            admin_ids = ["7782888722", "7839114402", "7768881599"]  # Aggiungi gli ID degli amministratori
+            admin_ids = ["7782888722", "7839114402",]  # Aggiungi gli ID degli amministratori
             for admin_id in admin_ids:
                 await context.bot.send_message(
                     admin_id,
