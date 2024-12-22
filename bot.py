@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 # Ottieni il token dalla variabile d'ambiente
 bot_token = os.getenv("BOT_TOKEN")
 if not bot_token:
-    raise ValueError("🚨 Il token non è stato trovato. Controlla le variabili d'ambiente.")
+    raise ValueError("🚨 Token mancante. Controlla le variabili d'ambiente.")
 
 # ID del canale (deve essere numerico, incluso il prefisso negativo)
 CHANNEL_ID = -1002397594286  # Cambia con l'ID del tuo canale
@@ -64,20 +64,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     username = user.username if user and user.username else "Sconosciuto"
     
     if not user_id:
-        await update.message.reply_text("❌ Errore: ID utente non trovato.")
+        await update.message.reply_text("❌ Non riesco a trovare il tuo ID utente.")
         return
 
     if has_received_link(user_id):  # Controlla se l'utente ha già ricevuto il link
-        await update.message.reply_text("⚠️ Hai già ricevuto il link per unirti al gruppo.")
+        await update.message.reply_text("⚠️ Hai già ricevuto il link per unirti.")
         return
 
     try:
-        # Crea un nuovo link di invito valido per una sola persona e che scade dopo 10 minuti
+        # Crea un nuovo link di invito valido per una sola persona e che scade dopo 1 minuto
         expire_time = datetime.now() + timedelta(minutes=1)
         chat_invite_link: ChatInviteLink = await context.bot.create_chat_invite_link(
             chat_id=CHANNEL_ID,
             member_limit=1,  # Limita il link a un solo utilizzo
-            expire_date=expire_time.timestamp()  # Scade dopo 10 minuti
+            expire_date=expire_time.timestamp()  # Scade dopo 1 minuto
         )
         
         # Aggiungi l'utente al database
@@ -85,7 +85,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         
         # Invia il messaggio di attesa
         await update.message.reply_text(
-            f" Sei stato aggiunto alla lista di attesa. Un amministratore approverà o rifiuterà la tua richiesta. 🕒"
+            "Sei in lista d'attesa. Un admin ti darà un feedback. ⏳"
         )
         
         # Notifica gli amministratori
@@ -93,14 +93,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         for admin_id in admin_ids:
             await context.bot.send_message(
                 admin_id,
-                f"🔔 Nuova richiesta di accesso al canale da @{username} (ID: {user_id}).\n"
-                "Approva o rifiuta questa richiesta."
+                f"🔔 Nuova richiesta di accesso da @{username} (ID: {user_id}). Approva o rifiuta."
             )
     
     except Exception as e:
         # Gestisce eventuali errori
-        await update.message.reply_text(f"❌ Si è verificato un errore durante la creazione del link. Errore: {e}")
-        logger.error(f"Errore durante la creazione del link di invito: {e}")
+        await update.message.reply_text(f"❌ Errore durante la creazione del link. Dettagli: {e}")
+        logger.error(f"Errore: {e}")
 
 # Funzione per approvare un utente
 async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -116,7 +115,7 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         result = cursor.fetchone()
 
         if not result:
-            await update.message.reply_text("⚠️ Questo utente non è in lista di attesa.")
+            await update.message.reply_text("⚠️ Questo utente non è in lista d'attesa.")
             return
 
         chat_invite_link = result[0]
@@ -124,9 +123,19 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         # Invia il link di invito all'utente
         await context.bot.send_message(
             user_id,
-            f"✅ Un amministratore ha approvato la tua richiesta! \nEcco il link per unirti al canale: {chat_invite_link} (il link scade tra 1 minuto)"
+            f"✅ La tua richiesta è stata approvata! 🎉 Ecco il link per entrare: {chat_invite_link} (il link scade tra 1 minuto)"
         )
+
+        # Risposta al comando
         await update.message.reply_text(f"🎉 Utente {user_id} approvato e link inviato! 📨")
+
+        # Notifica gli amministratori (inclusi te)
+        admin_ids = ["7782888722", "7839114402"]  # Aggiungi gli ID degli amministratori
+        for admin_id in admin_ids:
+            await context.bot.send_message(
+                admin_id,
+                f"🎉 Utente {user_id} è stato approvato e il link inviato! 📨"
+            )
 
         # Rimuovi l'utente dal database
         remove_pending_approval(user_id)
@@ -149,14 +158,16 @@ async def deny(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         result = cursor.fetchone()
 
         if not result:
-            await update.message.reply_text("⚠️ Questo utente non è in lista di attesa.")
+            await update.message.reply_text("⚠️ Questo utente non è in lista d'attesa.")
             return
 
         # Invia il messaggio di rifiuto all'utente
         await context.bot.send_message(
             user_id,
-            f"❌ La tua richiesta per unirti al canale è stata rifiutata. 😔\nMotivo: {motivo}"
+            f"❌ La tua richiesta per entrare è stata rifiutata. Motivo: {motivo} 😔"
         )
+
+        # Risposta al comando
         await update.message.reply_text(f"❌ Utente {user_id} rifiutato. Motivo: {motivo}")
 
         # Rimuovi l'utente dal database
@@ -178,9 +189,17 @@ async def approve_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             # Invia il link di invito a ciascun utente in attesa
             await context.bot.send_message(
                 user_id,
-                f"✅ Un amministratore ha accettato la tua richiesta! 🎉\nEcco il link per unirti al canale: {invite_link}"
+                f"✅ La tua richiesta è stata approvata! 🎉 Ecco il link per entrare: {invite_link}"
             )
             await update.message.reply_text(f"🎉 Utente {user_id} approvato e link inviato! 📨")
+
+            # Notifica gli amministratori
+            admin_ids = ["7782888722", "7839114402"]  # Aggiungi gli ID degli amministratori
+            for admin_id in admin_ids:
+                await context.bot.send_message(
+                    admin_id,
+                    f"🎉 Utente {user_id} è stato approvato e il link inviato! 📨"
+                )
 
             # Rimuovi l'utente dal database
             remove_pending_approval(user_id)
