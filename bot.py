@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 # Ottieni il token dalla variabile d'ambiente
 bot_token = os.getenv("BOT_TOKEN")
 if not bot_token:
-    raise ValueError("🚨 Token mancante. Controlla le variabili d'ambiente.")
+    raise ValueError("🚨 Il token non è stato trovato. Controlla le variabili d'ambiente.")
 
 # ID del canale (deve essere numerico, incluso il prefisso negativo)
 CHANNEL_ID = -1002397594286  # Cambia con l'ID del tuo canale
@@ -22,13 +22,13 @@ CHANNEL_ID = -1002397594286  # Cambia con l'ID del tuo canale
 db_connection = mysql.connector.connect(
     host="mysql.railway.internal",  # Host del database MySQL
     user="root",  # Nome utente del database MySQL
-    password="SkLZXExebspawlyFsxoahOZCFWUTcPvM",  # Password del database MySQL
+    password="EUXdxEGbZhsRPmgFddPImiQsyPXyzHhx",  # Password del database MySQL
     database="railway",  # Nome del database
     port=3306  # Porta del database
 )
 cursor = db_connection.cursor()
 
-# Crea la tabella per le richieste in sospeso se non esiste
+# Crea la tabella per le richieste pendenti se non esiste
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS pending_approval (
     user_id BIGINT PRIMARY KEY,
@@ -64,11 +64,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     username = user.username if user and user.username else "Sconosciuto"
     
     if not user_id:
-        await update.message.reply_text("❌ Non riesco a trovare il tuo ID, sembra che ci sia un errore.")
+        await update.message.reply_text("❌ Errore: ID utente non trovato.")
         return
 
     if has_received_link(user_id):  # Controlla se l'utente ha già ricevuto il link
-        await update.message.reply_text("⚠️ Hai già ricevuto il link per il canale!")
+        await update.message.reply_text("⚠️ Hai già ricevuto il link per unirti al gruppo.")
         return
 
     try:
@@ -85,7 +85,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         
         # Invia il messaggio di attesa
         await update.message.reply_text(
-            f"Ti ho aggiunto alla lista d'attesa! Un admin ti farà sapere se puoi entrare. ⏳"
+            f" Sei stato aggiunto alla lista di attesa. Un amministratore approverà o rifiuterà la tua richiesta. 🕒"
         )
         
         # Notifica gli amministratori
@@ -93,12 +93,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         for admin_id in admin_ids:
             await context.bot.send_message(
                 admin_id,
-                f"🔔 Nuova richiesta di accesso da @{username} (ID: {user_id}). Decidi se approvarla."
+                f"🔔 Nuova richiesta di accesso al canale da @{username} (ID: {user_id}).\n"
+                "Approva o rifiuta questa richiesta."
             )
     
     except Exception as e:
         # Gestisce eventuali errori
-        await update.message.reply_text(f"❌ Si è verificato un errore. Errore: {e}")
+        await update.message.reply_text(f"❌ Si è verificato un errore durante la creazione del link. Errore: {e}")
         logger.error(f"Errore durante la creazione del link di invito: {e}")
 
 # Funzione per approvare un utente
@@ -123,22 +124,15 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         # Invia il link di invito all'utente
         await context.bot.send_message(
             user_id,
-            f"✅ La tua richiesta è stata approvata! Ecco il link per entrare nel canale: {chat_invite_link}"
+            f"✅ Un amministratore ha approvato la tua richiesta! \nEcco il link per unirti al canale: {chat_invite_link} (il link scade tra 1 minuto)"
         )
-
-        # Notifica tutti gli amministratori
-        admin_ids = ["7839114402", "7782888722"]  # Aggiungi gli ID degli amministratori
-        for admin_id in admin_ids:
-            await context.bot.send_message(
-                admin_id,
-                f"🎉 La richiesta di {user_id} è stata approvata, il link è stato inviato!"
-            )
+        await update.message.reply_text(f"🎉 Utente {user_id} approvato e link inviato! 📨")
 
         # Rimuovi l'utente dal database
         remove_pending_approval(user_id)
 
     except ValueError:
-        await update.message.reply_text("❌ L'ID che hai inserito non è valido. Prova con un numero giusto.")
+        await update.message.reply_text("❌ ID utente non valido. Assicurati di inserire un numero valido.")
 
 # Funzione per rifiutare un utente
 async def deny(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -161,30 +155,22 @@ async def deny(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         # Invia il messaggio di rifiuto all'utente
         await context.bot.send_message(
             user_id,
-            f"❌ La tua richiesta è stata rifiutata. Motivo: {motivo}"
+            f"❌ La tua richiesta per unirti al canale è stata rifiutata. 😔\nMotivo: {motivo}"
         )
-        await update.message.reply_text(f"❌ La richiesta di {user_id} è stata rifiutata. Motivo: {motivo}")
-
-        # Notifica tutti gli amministratori
-        admin_ids = ["7839114402", "7768881599"]  # Aggiungi gli ID degli amministratori
-        for admin_id in admin_ids:
-            await context.bot.send_message(
-                admin_id,
-                f"❌ La richiesta di {user_id} è stata rifiutata. Motivo: {motivo}"
-            )
+        await update.message.reply_text(f"❌ Utente {user_id} rifiutato. Motivo: {motivo}")
 
         # Rimuovi l'utente dal database
         remove_pending_approval(user_id)
 
     except ValueError:
-        await update.message.reply_text("❌ L'ID che hai inserito non è valido. Prova con un numero giusto.")
+        await update.message.reply_text("❌ ID utente non valido. Assicurati di inserire un numero valido.")
 
 # Funzione per approvare tutte le richieste
 async def approve_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # Ottieni tutte le richieste pendenti
     requests = get_pending_approval()
     if not requests:
-        await update.message.reply_text("📭 Non ci sono richieste in attesa.")
+        await update.message.reply_text("📭 Non ci sono richieste in sospeso.")
         return
 
     for user_id, invite_link in requests:
@@ -192,16 +178,9 @@ async def approve_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             # Invia il link di invito a ciascun utente in attesa
             await context.bot.send_message(
                 user_id,
-                f"✅ La tua richiesta è stata approvata! 🎉 Ecco il link per entrare nel canale: {invite_link}"
+                f"✅ Un amministratore ha accettato la tua richiesta! 🎉\nEcco il link per unirti al canale: {invite_link}"
             )
-
-            # Notifica tutti gli amministratori
-            admin_ids = ["7839114402", "7768881599"]  # Aggiungi gli ID degli amministratori
-            for admin_id in admin_ids:
-                await context.bot.send_message(
-                    admin_id,
-                    f"🎉 La richiesta di {user_id} è stata approvata, il link è stato inviato!"
-                )
+            await update.message.reply_text(f"🎉 Utente {user_id} approvato e link inviato! 📨")
 
             # Rimuovi l'utente dal database
             remove_pending_approval(user_id)
