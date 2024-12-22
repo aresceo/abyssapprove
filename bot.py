@@ -68,7 +68,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     if has_received_link(user_id):  # Controlla se l'utente ha già ricevuto il link
-        await update.message.reply_text("⚠️ Hai già ricevuto il link per unirti al canale.")
+        await update.message.reply_text("⚠️ Hai già ricevuto il link per unirti al gruppo.")
         return
 
     try:
