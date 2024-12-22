@@ -1,5 +1,5 @@
 import os
-import sqlite3
+import mysql.connector
 from telegram import Update, ChatInviteLink
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 import logging
@@ -18,18 +18,24 @@ if not bot_token:
 # ID del canale (deve essere numerico, incluso il prefisso negativo)
 CHANNEL_ID = -1002397594286  # Cambia con l'ID del tuo canale
 
-# Connessione al database SQLite
-conn = sqlite3.connect('requests.db', check_same_thread=False)
-cursor = conn.cursor()
+# Configurazione della connessione al database MySQL
+db_connection = mysql.connector.connect(
+    host="mysql.railway.internal",  # Host del database MySQL
+    user="root",  # Nome utente del database MySQL
+    password="EUXdxEGbZhsRPmgFddPImiQsyPXyzHhx",  # Password del database MySQL
+    database="railway",  # Nome del database
+    port=3306  # Porta del database
+)
+cursor = db_connection.cursor()
 
-# Crea una tabella per le richieste in sospeso se non esiste
+# Crea la tabella per le richieste pendenti se non esiste
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS pending_approval (
-    user_id INTEGER PRIMARY KEY,
+    user_id BIGINT PRIMARY KEY,
     invite_link TEXT NOT NULL
 )
 ''')
-conn.commit()
+db_connection.commit()
 
 # Funzione per ottenere tutte le richieste in sospeso dal database
 def get_pending_approval():
@@ -38,17 +44,17 @@ def get_pending_approval():
 
 # Funzione per aggiungere una richiesta in sospeso al database
 def add_pending_approval(user_id, invite_link):
-    cursor.execute('INSERT INTO pending_approval (user_id, invite_link) VALUES (?, ?)', (user_id, invite_link))
-    conn.commit()
+    cursor.execute('INSERT INTO pending_approval (user_id, invite_link) VALUES (%s, %s)', (user_id, invite_link))
+    db_connection.commit()
 
 # Funzione per rimuovere una richiesta approvata o rifiutata dal database
 def remove_pending_approval(user_id):
-    cursor.execute('DELETE FROM pending_approval WHERE user_id = ?', (user_id,))
-    conn.commit()
+    cursor.execute('DELETE FROM pending_approval WHERE user_id = %s', (user_id,))
+    db_connection.commit()
 
 # Funzione per verificare se un utente ha già ricevuto il link
 def has_received_link(user_id):
-    cursor.execute('SELECT user_id FROM pending_approval WHERE user_id = ?', (user_id,))
+    cursor.execute('SELECT user_id FROM pending_approval WHERE user_id = %s', (user_id,))
     return cursor.fetchone() is not None
 
 # Funzione per gestire il comando /start
@@ -106,7 +112,7 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user_id = int(context.args[0])  # ID dell'utente da approvare
 
         # Recupera la richiesta dal database
-        cursor.execute('SELECT invite_link FROM pending_approval WHERE user_id = ?', (user_id,))
+        cursor.execute('SELECT invite_link FROM pending_approval WHERE user_id = %s', (user_id,))
         result = cursor.fetchone()
 
         if not result:
@@ -139,7 +145,7 @@ async def deny(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         motivo = " ".join(context.args[1:]) if len(context.args) > 1 else "Nessun motivo"
 
         # Recupera la richiesta dal database
-        cursor.execute('SELECT invite_link FROM pending_approval WHERE user_id = ?', (user_id,))
+        cursor.execute('SELECT invite_link FROM pending_approval WHERE user_id = %s', (user_id,))
         result = cursor.fetchone()
 
         if not result:
