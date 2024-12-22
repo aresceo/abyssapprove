@@ -10,7 +10,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # Ottieni il token dalla variabile d'ambiente
-bot_token = os.getenv("7925422313:AAGlCZGaosm80Eug0sj8siuw8v0IbpUQLHs")
+bot_token = os.getenv("BOT_TOKEN")
 if not bot_token:
     raise ValueError("🚨 Il token non è stato trovato. Controlla le variabili d'ambiente.")
 
