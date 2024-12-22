@@ -15,7 +15,7 @@ if not bot_token:
     raise ValueError("🚨 Il token non è stato trovato. Controlla le variabili d'ambiente.")
 
 # ID del canale (deve essere numerico, incluso il prefisso negativo)
-CHANNEL_ID = -1002302974443  # Cambia con l'ID del tuo canale
+CHANNEL_ID = -1002397594286  # Cambia con l'ID del tuo canale
 
 # Connessione al database SQLite
 conn = sqlite3.connect('requests.db', check_same_thread=False)
