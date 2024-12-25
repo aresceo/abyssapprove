@@ -3,140 +3,200 @@ import sqlite3
 from telegram import Update, ChatInviteLink
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 import logging
+from datetime import datetime, timedelta
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+# Configura il logging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-token_bot = os.getenv("BOT_TOKEN")
-if not token_bot:
-    raise ValueError("🚨 Il token del bot non è stato trovato. Controlla le variabili d'ambiente.")
+# Ottieni il token dalla variabile d'ambiente
+bot_token = os.getenv("BOT_TOKEN")
+if not bot_token:
+    raise ValueError("🚨 Il token non è stato trovato. Controlla le variabili d'ambiente.")
 
-id_canale = -1002397594286
+# ID del canale (deve essere numerico, incluso il prefisso negativo)
+CHANNEL_ID = -1002397594286  # Cambia con l'ID del tuo canale
 
-connessione = sqlite3.connect('richieste.db', check_same_thread=False)
-cursore = connessione.cursor()
+# Connessione al database SQLite
+conn = sqlite3.connect('requests.db', check_same_thread=False)
+cursor = conn.cursor()
 
-cursore.execute('''
-CREATE TABLE IF NOT EXISTS richieste_in_attesa (
-    id_utente INTEGER PRIMARY KEY,
-    link_invito TEXT NOT NULL
+# Crea una tabella per le richieste in sospeso se non esiste
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS pending_approval (
+    user_id INTEGER PRIMARY KEY,
+    invite_link TEXT NOT NULL
 )
 ''')
-connessione.commit()
+conn.commit()
 
-def ottieni_richieste_in_attesa():
-    cursore.execute('SELECT id_utente, link_invito FROM richieste_in_attesa')
-    return cursore.fetchall()
+# Funzione per ottenere tutte le richieste in sospeso dal database
+def get_pending_approval():
+    cursor.execute('SELECT user_id, invite_link FROM pending_approval')
+    return cursor.fetchall()
 
-def aggiungi_richiesta_in_attesa(id_utente, link_invito):
-    cursore.execute('INSERT INTO richieste_in_attesa (id_utente, link_invito) VALUES (?, ?)', (id_utente, link_invito))
-    connessione.commit()
+# Funzione per aggiungere una richiesta in sospeso al database
+def add_pending_approval(user_id, invite_link):
+    cursor.execute('INSERT INTO pending_approval (user_id, invite_link) VALUES (?, ?)', (user_id, invite_link))
+    conn.commit()
 
-def rimuovi_richiesta(id_utente):
-    cursore.execute('DELETE FROM richieste_in_attesa WHERE id_utente = ?', (id_utente,))
-    connessione.commit()
+# Funzione per rimuovere una richiesta approvata o rifiutata dal database
+def remove_pending_approval(user_id):
+    cursor.execute('DELETE FROM pending_approval WHERE user_id = ?', (user_id,))
+    conn.commit()
 
-def utente_ha_ricevuto_link(id_utente):
-    cursore.execute('SELECT id_utente FROM richieste_in_attesa WHERE id_utente = ?', (id_utente,))
-    return cursore.fetchone() is not None
+# Funzione per verificare se un utente ha già ricevuto il link
+def has_received_link(user_id):
+    cursor.execute('SELECT user_id FROM pending_approval WHERE user_id = ?', (user_id,))
+    return cursor.fetchone() is not None
 
-async def avvia(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    utente = update.message.from_user
-    id_utente = utente.id if utente and utente.id else None
-    nome_utente = utente.username if utente and utente.username else "Sconosciuto"
+# Funzione per gestire il comando /start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.message.from_user
+    user_id = user.id if user and user.id else None  # Controlla che user_id non sia None
+    username = user.username if user and user.username else "Sconosciuto"
     
-    if not id_utente:
+    if not user_id:
         await update.message.reply_text("❌ Errore: ID utente non trovato.")
         return
 
-    if utente_ha_ricevuto_link(id_utente):
+    if has_received_link(user_id):  # Controlla se l'utente ha già ricevuto il link
         await update.message.reply_text("⚠️ Hai già ricevuto il link per unirti al canale.")
         return
 
     try:
-        link_invito_chat: ChatInviteLink = await context.bot.create_chat_invite_link(chat_id=id_canale, member_limit=1)
-        aggiungi_richiesta_in_attesa(id_utente, link_invito_chat.invite_link)
-        await update.message.reply_text("Sei stato aggiunto alla lista di attesa. Un amministratore approverà o rifiuterà la tua richiesta. 🕒 (dev @stabbato)")
-        id_amministratori = ["7782888722", "7839114402"]
-        for id_amministratore in id_amministratori:
+        # Crea un nuovo link di invito valido per una sola persona e che scade dopo 10 minuti
+        expire_time = datetime.now() + timedelta(minutes=1)
+        chat_invite_link: ChatInviteLink = await context.bot.create_chat_invite_link(
+            chat_id=CHANNEL_ID,
+            member_limit=1,  # Limita il link a un solo utilizzo
+            expire_date=expire_time.timestamp()  # Scade dopo 10 minuti
+        )
+        
+        # Aggiungi l'utente al database
+        add_pending_approval(user_id, chat_invite_link.invite_link)
+        
+        # Invia il messaggio di attesa
+        await update.message.reply_text(
+            f" Sei stato aggiunto alla lista di attesa. Un amministratore approverà o rifiuterà la tua richiesta. 🕒"
+        )
+        
+        # Notifica gli amministratori
+        admin_ids = ["7782888722", "7839114402"]  # Aggiungi gli ID degli amministratori
+        for admin_id in admin_ids:
             await context.bot.send_message(
-                id_amministratore,
-                f"🔔 Nuova richiesta di accesso al canale da @{nome_utente} (ID: {id_utente}).\nApprova o rifiuta questa richiesta."
+                admin_id,
+                f"🔔 Nuova richiesta di accesso al canale da @{username} (ID: {user_id}).\n"
+                "Approva o rifiuta questa richiesta."
             )
+    
     except Exception as e:
-        await update.message.reply_text(f"❌ errore durante la creazione del link. Errore: {e}")
+        # Gestisce eventuali errori
+        await update.message.reply_text(f"❌ Si è verificato un errore durante la creazione del link. Errore: {e}")
         logger.error(f"Errore durante la creazione del link di invito: {e}")
 
-async def approva(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+# Funzione per approvare un utente
+async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if len(context.args) != 1:
-        await update.message.reply_text("❓ Usa /approve <id_utente> per approvare un utente.")
+        await update.message.reply_text("❓ Usa /approve <user_id> per approvare un utente.")
         return
 
     try:
-        id_utente = int(context.args[0])
-        cursore.execute('SELECT link_invito FROM richieste_in_attesa WHERE id_utente = ?', (id_utente,))
-        risultato = cursore.fetchone()
+        user_id = int(context.args[0])  # ID dell'utente da approvare
 
-        if not risultato:
+        # Recupera la richiesta dal database
+        cursor.execute('SELECT invite_link FROM pending_approval WHERE user_id = ?', (user_id,))
+        result = cursor.fetchone()
+
+        if not result:
             await update.message.reply_text("⚠️ Questo utente non è in lista di attesa.")
             return
 
-        link_invito_chat = risultato[0]
-        await context.bot.send_message(id_utente, f"✅ Un amministratore ha approvato la tua richiesta! \nEcco il link per unirti al canale: {link_invito_chat}")
-        await update.message.reply_text(f" Utente {id_utente} approvato e link inviato! 📨")
-        rimuovi_richiesta(id_utente)
+        chat_invite_link = result[0]
 
-    except ValueError:
-        await update.message.reply_text("❌ ID utente non valido. Assicurati di inserire un numero valido.")
-
-async def rifiuta(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if len(context.args) < 1:
-        await update.message.reply_text("❓ Usa /deny <id_utente> <motivo> per rifiutare un utente.")
-        return
-
-    try:
-        id_utente = int(context.args[0])
-        motivo = " ".join(context.args[1:]) if len(context.args) > 1 else "Nessun motivo"
-        cursore.execute('SELECT link_invito FROM richieste_in_attesa WHERE id_utente = ?', (id_utente,))
-        risultato = cursore.fetchone()
-
-        if not risultato:
-            await update.message.reply_text("⚠️ Questo utente non è in lista di attesa.")
-            return
-
+        # Invia il link di invito all'utente
         await context.bot.send_message(
-            id_utente,
-            f"❌ La tua richiesta per unirti al canale è stata rifiutata. \nMotivo: {motivo}"
+            user_id,
+            f"✅ Un amministratore ha approvato la tua richiesta! \nEcco il link per unirti al canale: {chat_invite_link}"
         )
-        await update.message.reply_text(f"❌ Utente {id_utente} rifiutato. Motivo: {motivo}")
-        rimuovi_richiesta(id_utente)
+        await update.message.reply_text(f"🎉 Utente {user_id} approvato e link inviato! 📨")
+
+        # Rimuovi l'utente dal database
+        remove_pending_approval(user_id)
 
     except ValueError:
         await update.message.reply_text("❌ ID utente non valido. Assicurati di inserire un numero valido.")
 
-async def approva_tutti(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    richieste = ottieni_richieste_in_attesa()
-    if not richieste:
+# Funzione per rifiutare un utente
+async def deny(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if len(context.args) < 1:
+        await update.message.reply_text("❓ Usa /deny <user_id> <motivo> per rifiutare un utente.")
+        return
+
+    try:
+        user_id = int(context.args[0])  # ID dell'utente da rifiutare
+        motivo = " ".join(context.args[1:]) if len(context.args) > 1 else "Nessun motivo"
+
+        # Recupera la richiesta dal database
+        cursor.execute('SELECT invite_link FROM pending_approval WHERE user_id = ?', (user_id,))
+        result = cursor.fetchone()
+
+        if not result:
+            await update.message.reply_text("⚠️ Questo utente non è in lista di attesa.")
+            return
+
+        # Invia il messaggio di rifiuto all'utente
+        await context.bot.send_message(
+            user_id,
+            f"❌ La tua richiesta per unirti al canale è stata rifiutata. 😔\nMotivo: {motivo}"
+        )
+        await update.message.reply_text(f"❌ Utente {user_id} rifiutato. Motivo: {motivo}")
+
+        # Rimuovi l'utente dal database
+        remove_pending_approval(user_id)
+
+    except ValueError:
+        await update.message.reply_text("❌ ID utente non valido. Assicurati di inserire un numero valido.")
+
+# Funzione per approvare tutte le richieste
+async def approve_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Ottieni tutte le richieste pendenti
+    requests = get_pending_approval()
+    if not requests:
         await update.message.reply_text("📭 Non ci sono richieste in sospeso.")
         return
 
-    for id_utente, link_invito in richieste:
+    for user_id, invite_link in requests:
         try:
+            # Invia il link di invito a ciascun utente in attesa
             await context.bot.send_message(
-                id_utente,
-                f"✅ Un amministratore ha accettato la tua richiesta! 🎉\nEcco il link per unirti al canale: {link_invito}"
+                user_id,
+                f"✅ Un amministratore ha accettato la tua richiesta! 🎉\nEcco il link per unirti al canale: {invite_link}"
             )
-            await update.message.reply_text(f"🎉 Utente {id_utente} approvato e link inviato! 📨")
-            rimuovi_richiesta(id_utente)
+            await update.message.reply_text(f"🎉 Utente {user_id} approvato e link inviato! 📨")
+
+            # Rimuovi l'utente dal database
+            remove_pending_approval(user_id)
         except Exception as e:
-            logger.error(f"Errore nell'inviare il link a {id_utente}: {e}")
+            logger.error(f"Errore nell'inviare il link a {user_id}: {e}")
 
-app = ApplicationBuilder().token(token_bot).build()
-app.add_handler(CommandHandler("start", avvia))
-app.add_handler(CommandHandler("approve", approva))
-app.add_handler(CommandHandler("deny", rifiuta))
-app.add_handler(CommandHandler("approveall", approva_tutti))
+# Configurazione del bot
+app = ApplicationBuilder().token(bot_token).build()
 
+# Aggiungi il gestore per il comando /start
+app.add_handler(CommandHandler("start", start))
+
+# Aggiungi il gestore per l'approvazione
+app.add_handler(CommandHandler("approve", approve))
+
+# Aggiungi il gestore per il rifiuto
+app.add_handler(CommandHandler("deny", deny))
+
+# Aggiungi il gestore per l'approvazione di tutti gli utenti
+app.add_handler(CommandHandler("approveall", approve_all))
+
+# Avvia il bot
 if __name__ == "__main__":
     print("🤖 Bot in esecuzione...")
     app.run_polling()
